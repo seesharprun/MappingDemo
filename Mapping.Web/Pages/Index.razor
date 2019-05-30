@@ -1,0 +1,121 @@
+﻿@page "/"
+@inject IJSRuntime jsRuntime
+@inject IOptions<Configuration> optionsConfiguration
+@inject ISearchService searchService
+@functions {
+    private ElementRef container;
+    private bool mapReady = false;
+    private Shape shape;
+    private int searchCount = 100;
+    private IEnumerable<Location> results = Enumerable.Empty<Location>();
+    private async Task OnLoadMap()
+    {
+        mapReady = await jsRuntime.InvokeAsync<bool>("azureMapsFunctions.init", container, optionsConfiguration?.Value?.Azure?.Maps?.Key);
+    }
+    private async Task OnLoadShapes()
+    {
+        string json = await jsRuntime.InvokeAsync<string>("azureMapsFunctions.loadPolygons");
+        var shapes = Json.Deserialize<PolygonSet>(json)?.Features.Select<Polygon, Shape>(p => p);
+        shape = shapes.FirstOrDefault();
+    }
+    private async Task OnSearch()
+    {
+        results = await searchService.GetLocationsForShapeAsync(shape, searchCount);
+        await jsRuntime.InvokeAsync<bool>("azureMapsFunctions.addPins", results.Select(r => new { lat = r.Point.Latitude, lon = r.Point.Longitude, add = r.Address }));
+    }
+}
+<section>
+    <aside class="px-2 d-flex flex-row justify-content-between">
+        <dl>
+            <dt>Azure Maps Key</dt>
+            <dd>@optionsConfiguration?.Value?.Azure?.Maps?.Key</dd>
+            <dt>Azure Search Account</dt>
+            <dd>@optionsConfiguration?.Value?.Azure?.Search?.Account</dd>
+            <dt>Azure Search Index</dt>
+            <dd>@optionsConfiguration?.Value?.Azure?.Search?.Index</dd>
+            <dt>Azure Search Key</dt>
+            <dd>@optionsConfiguration?.Value?.Azure?.Search?.Key</dd>
+        </dl>
+        <div class="alert alert-info" role="alert">
+            <small>
+                <strong>Notes:</strong>
+                <br />
+                To get started, click the <strong>Load Map</strong> button
+                <br />
+                Then click the <strong>Polygon</strong> button on the map toolbar
+                <br />
+                Use the <kbd>Esc</kbd> key to cancel drawing
+                <br />
+                Use the <kbd>F</kbd> key or <kbd>click</kbd> to add a point
+                <br />
+                Use the <kbd>C</kbd> key or <kbd>double-click</kbd> to complete a polygon.
+            </small>
+        </div>
+        <div class="btn-group-vertical" role="group" aria-label="Basic example">
+            <button type="button" class="btn btn-secondary" onclick="@OnLoadMap">Load Map</button>
+            <button type="button" class="btn btn-secondary" onclick="@OnLoadShapes" disabled="@(mapReady ? null : "disabled")">Retrieve First Shape</button>
+            <button type="button" class="btn btn-secondary" onclick="@OnSearch" disabled="@(!(shape is null) ? null : "disabled")">Search First Shape</button>
+        </div>
+    </aside>
+    <section>
+        @if (!(shape is null))
+        {
+            <div class="card bg-dark text-light">
+                <div class="card-header d-flex justify-content-between">
+                    <span>
+                        @shape.Title
+                    </span>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm text-light">
+                        <thead>
+                            <tr>
+                                <th scope="col">#</th>
+                                <th scope="col">Latitude</th>
+                                <th scope="col">Longitude</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var point in shape.Points)
+                            {
+                                <tr>
+                                    <th scope="row">
+                                        <small>
+                                            @(shape.Points.IndexOf(point) + 1)
+                                        </small>
+                                    </th>
+                                    <td>
+                                        @point.Latitude
+                                    </td>
+                                    <td>
+                                        @point.Longitude
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+    </section>
+    <section>
+        <article ref="container" class="w-100 mt-5" style="height: 500px;"></article>
+    </section>
+    <section>
+        @if (results.Any())
+        {
+            <blockquote>
+                Search is limited to first @searchCount results
+            </blockquote>
+            <ul class="list-group">
+                @foreach (var result in results)
+                {
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        @result.Address
+                        <span class="badge badge-primary badge-pill">@result.Id</span>
+                    </li>
+                }
+            </ul>
+        }
+    </section>
+</section>
