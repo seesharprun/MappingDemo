@@ -1,6 +1,6 @@
 # Azure Maps & Azure Search Demo
 
-This demo web application
+This demo web application illustrates using Azure Maps to draw a polygon and then searching over a result set of [GeoJSON](http://geojson.io) points for results that intersect the polygon.
 
 ## Deploy
 
