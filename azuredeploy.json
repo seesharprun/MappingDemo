@@ -1,0 +1,153 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "variables": {
+        "searchName": "[concat('mapsrch', uniqueString(resourceGroup().id))]",
+        "mapName": "[concat('mapacct', uniqueString(resourceGroup().id))]",
+        "containerName": "[concat('mapcont', uniqueString(resourceGroup().id))]",
+        "appServicePlanName": "[concat('mapplan', uniqueString(resourceGroup().id))]",
+        "webAppName": "[concat('mapweba', uniqueString(resourceGroup().id))]",
+        "searchIndex": "locations"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Search/searchServices",
+            "apiVersion": "2015-08-19",
+            "name": "[variables('searchName')]",
+            "location": "[resourceGroup().location]",
+            "sku": {
+                "name": "standard"
+            },
+            "properties": {}
+        },
+        {
+            "type": "Microsoft.ContainerInstance/containerGroups",
+            "apiVersion": "2018-10-01",
+            "name": "[variables('containerName')]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Search/searchServices', variables('searchName'))]"
+            ],
+            "properties": {
+                "containers": [
+                    {
+                        "name": "mapping-populate",
+                        "properties": {
+                            "image": "seesharprun/mapping.populate:latest",
+                            "resources": {
+                                "requests": {
+                                    "memoryInGB": "1.5",
+                                    "cpu": "1"
+                                }
+                            },
+                            "environmentVariables": [
+                                {
+                                    "name": "Azure__Search__Account",
+                                    "value": "[variables('searchName')]"
+                                },
+                                {
+                                    "name": "Azure__Search__Index",
+                                    "value": "[variables('searchIndex')]"
+                                },
+                                {
+                                    "name": "Azure__Search__Key",
+                                    "value": "[listAdminKeys(resourceId('Microsoft.Search/searchServices', variables('searchName')), '2015-08-19').primaryKey]"
+                                }
+                            ]
+                        }
+                    }
+                ],
+                "osType": "Linux",
+                "restartPolicy": "OnFailure"
+            }
+        },
+        {
+            "type": "Microsoft.Maps/accounts",
+            "apiVersion": "2018-05-01",
+            "name": "[variables('mapName')]",
+            "location": "global",
+            "sku": {
+                "name": "S0"
+            }
+        },
+        {
+            "type": "Microsoft.Web/serverfarms",
+            "apiVersion": "2018-02-01",
+            "name": "[variables('appServicePlanName')]",
+            "location": "[resourceGroup().location]",
+            "tags": {},
+            "sku": {
+                "tier": "Standard",
+                "name": "S1"
+            },
+            "kind": "linux",
+            "properties": {
+                "name": "[variables('appServicePlanName')]",
+                "numberOfWorkers": 1,
+                "workerSize": 0,
+                "workerSizeId": 0,
+                "reserved": true,
+                "hostingEnvironment": ""
+            }
+        },
+        {
+            "type": "Microsoft.Web/sites",
+            "apiVersion": "2018-02-01",
+            "name": "[variables('webAppName')]",
+            "kind": "app,linux,container",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]",
+                "[resourceId('Microsoft.Search/searchServices', variables('searchName'))]",
+                "[resourceId('Microsoft.Maps/accounts', variables('mapName'))]",
+                "[resourceId('Microsoft.ContainerInstance/containerGroups', variables('containerName'))]"
+            ],
+            "properties": {
+                "name": "[variables('webAppName')]",
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]",
+                "clientAffinityEnabled": false,
+                "hostingEnvironment": "",
+                "siteConfig": {
+                    "linuxFxVersion": "DOCKER|seesharprun/mapping.web:latest",
+                    "alwaysOn": true,
+                    "appSettings": [
+                        {
+                            "name": "DOCKER_REGISTRY_SERVER_URL",
+                            "value": "https://index.docker.io"
+                        },
+                        {
+                            "name": "DOCKER_REGISTRY_SERVER_USERNAME",
+                            "value": ""
+                        },
+                        {
+                            "name": "DOCKER_REGISTRY_SERVER_PASSWORD",
+                            "value": ""
+                        },
+                        {
+                            "name": "Azure__Search__Account",
+                            "value": "[variables('searchName')]"
+                        },
+                        {
+                            "name": "Azure__Search__Index",
+                            "value": "[variables('searchIndex')]"
+                        },
+                        {
+                            "name": "Azure__Search__Key",
+                            "value": "[listAdminKeys(resourceId('Microsoft.Search/searchServices', variables('searchName')), '2015-08-19').primaryKey]"
+                        },
+                        {
+                            "name": "Azure__Maps__Key",
+                            "value": "[listKeys(resourceId('Microsoft.Maps/accounts', variables('mapName')), '2018-05-01').primaryKey]"
+                        }
+                    ]
+                }
+            }
+        }
+    ],
+    "outputs": {
+        "url": {
+            "type": "string",
+            "value": "[reference(resourceId('Microsoft.Web/sites', variables('webAppName')), '2018-02-01').defaultHostName]"
+        }
+    }
+}
